@@ -3,7 +3,8 @@
 A comprehensive Python application for downloading, viewing, and analyzing solar images from NASA's Solar Dynamics Observatory (SDO). Features multiple interfaces including web-based Gradio interfaces, video creation capabilities, and real-time solar wind data analysis.
 
 ![NASA SDO Solar Images](background_solar.jpg)
-
+![NASA SDO Solar Images](app.jpg)
+![NASA SDO Solar Images](launch.jpg)
 ## ✨ Features
 
 ### 🖥️ Multiple Interface Options
