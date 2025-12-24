@@ -83,6 +83,14 @@ A comprehensive Python application for downloading, viewing, and analyzing solar
 
 ## 🎯 Usage
 
+### Python project
+
+```bash
+python launch_gui.py
+```
+- **Features**: Traditional desktop interface
+- **Best for**: Users who prefer desktop applications
+
 ### Web Interface (Recommended)
 
 #### Option 1: Main Web Application (`app.py`)
@@ -100,45 +108,6 @@ python gradio_app.py
 - **URL**: http://127.0.0.1:7862
 - **Features**: Alternative implementation with same functionality
 - **Best for**: Development, testing, or if main app has issues
-
-#### Option 3: Easy Launcher (`launch_web.py`)
-```bash
-python launch_web.py
-```
-- **Features**: Automatic dependency installation and launch
-- **Best for**: First-time users, automated setup
-
-### GUI Interface
-
-```bash
-python launch_gui.py
-```
-- **Features**: Traditional desktop interface
-- **Best for**: Users who prefer desktop applications
-
-### Command Line Tools
-
-#### Download Images for Specific Dates
-```bash
-# Download today's images
-python download_today.py
-
-# Download images for a date range
-python demo_date_range.py
-
-# Download real images (batch processing)
-python download_real_images.py
-```
-
-#### Create Videos
-```bash
-python create_video.py
-```
-
-#### View Images
-```bash
-python view_images.py
-```
 
 ## 📁 Project Structure
 
