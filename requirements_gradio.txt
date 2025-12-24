@@ -1,0 +1,11 @@
+# NASA Solar Image Downloader - Gradio Web Interface Requirements
+
+# Core dependencies
+gradio>=4.0.0
+pillow>=9.0.0
+opencv-python>=4.5.0
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+
+# Optional but recommended
+numpy>=1.21.0

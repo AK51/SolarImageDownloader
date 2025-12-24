@@ -1,0 +1,6 @@
+# Minimal requirements for NASA Solar Image Downloader
+gradio
+pillow
+opencv-python
+requests
+beautifulsoup4
