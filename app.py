@@ -162,7 +162,7 @@ class NASADownloaderGradio:
             result += f"📥 Downloaded: {successful} images\n"
             result += f"❌ Failed: {failed} images\n"
             result += f"📊 Total available: {len(available_images)} images\n"
-            result += f"� DFilter: {self.filter_data[solar_filter]['name']} - {self.filter_data[solar_filter]['desc']}"
+            result += f"🔍 Filter: {self.filter_data[solar_filter]['name']} - {self.filter_data[solar_filter]['desc']}"
             
             return result, self.get_available_dates()
             
@@ -441,7 +441,7 @@ class NASADownloaderGradio:
         return sorted(videos, reverse=True)
     
     def select_video_from_dropdown(self, video_selection):
-        """Handle video selection from dropdown with simplified approach."""
+        """Handle video selection from dropdown with temporary file approach."""
         if not video_selection:
             return None
         
@@ -457,10 +457,32 @@ class NASADownloaderGradio:
             print(f"DEBUG: Looking for video at: {video_path.absolute()}")
             
             if video_path.exists():
-                # Use the absolute path directly - no conversion for now
-                abs_path = str(video_path.absolute())
-                print(f"DEBUG: Returning video path: {abs_path}")
-                return abs_path
+                # Create a temporary copy with a simpler name for Gradio
+                import shutil
+                
+                # Create temp directory if it doesn't exist
+                temp_dir = Path("temp_videos")
+                temp_dir.mkdir(exist_ok=True)
+                
+                # Clean up old temp files (older than 1 hour)
+                self._cleanup_temp_videos(temp_dir)
+                
+                # Create a simple filename
+                temp_filename = f"selected_video_{int(time.time())}.mp4"
+                temp_path = temp_dir / temp_filename
+                
+                try:
+                    # Copy the video to temp location
+                    shutil.copy2(video_path, temp_path)
+                    print(f"DEBUG: Copied video to temp location: {temp_path}")
+                    
+                    # Return relative path to temp file
+                    return str(temp_path)
+                    
+                except Exception as copy_error:
+                    print(f"DEBUG: Failed to copy video: {copy_error}")
+                    # Fallback to original relative path
+                    return str(video_path)
             else:
                 print(f"DEBUG: Video file not found!")
                 return None
@@ -468,6 +490,24 @@ class NASADownloaderGradio:
         except Exception as e:
             print(f"DEBUG: Error in select_video_from_dropdown: {e}")
             return None
+    
+    def _cleanup_temp_videos(self, temp_dir, max_age_hours=1):
+        """Clean up old temporary video files."""
+        try:
+            current_time = time.time()
+            max_age_seconds = max_age_hours * 3600
+            
+            for temp_file in temp_dir.glob("selected_video_*.mp4"):
+                try:
+                    file_age = current_time - temp_file.stat().st_mtime
+                    if file_age > max_age_seconds:
+                        temp_file.unlink()
+                        print(f"DEBUG: Cleaned up old temp file: {temp_file}")
+                except Exception as e:
+                    print(f"DEBUG: Failed to clean up {temp_file}: {e}")
+                    
+        except Exception as e:
+            print(f"DEBUG: Error during temp cleanup: {e}")
     
     def open_data_folder(self):
         """Open data folder (returns path for web interface)."""
@@ -584,16 +624,11 @@ class NASADownloaderGradio:
                     if output_path.stat().st_size == 0:
                         return None, f"❌ Video file is empty: {output_path.absolute()}"
                     
-                    # Debug: Print the actual path being used
-                    abs_path = output_path.absolute()
-                    print(f"DEBUG: Video created at: {abs_path}")
-                    print(f"DEBUG: File exists: {abs_path.exists()}")
-                    print(f"DEBUG: File size: {abs_path.stat().st_size} bytes")
-                    
                     # Ensure video is web-compatible
                     web_compatible_path = self._ensure_web_compatible_video(output_path)
                     
                     # Add path info to the message for debugging
+                    abs_path = output_path.absolute()
                     final_message += f"\n📍 Original: {abs_path}"
                     final_message += f"\n📍 Web Version: {web_compatible_path}"
                     
@@ -790,14 +825,14 @@ class NASADownloaderGradio:
             print(f"DEBUG: Error in web conversion: {e}")
             # Always return the original absolute path as fallback
             return str(video_path.absolute())
-
+    
     def refresh_video_list_and_clear(self):
         """Refresh video list and clear video players."""
         # Get updated video list
         updated_list = self.get_video_list()
         
-        # Return updated list and None for both video players to clear them
-        return updated_list, None, None
+        # Return updated dropdown choices and clear both video players
+        return gr.Dropdown(choices=updated_list), None, None
 
     def test_video_loading(self):
         """Test function to check video loading."""
@@ -819,28 +854,6 @@ class NASADownloaderGradio:
         result += f"**File Exists**: {test_video.exists()}\n"
         result += f"**File Size**: {test_video.stat().st_size / (1024*1024):.1f} MB\n"
         
-        # Try to return the path for testing
-        return result
-        """Test function to check video loading."""
-        video_dir = Path("video")
-        if not video_dir.exists():
-            return "❌ Video directory does not exist"
-        
-        videos = list(video_dir.glob("*.mp4"))
-        if not videos:
-            return "❌ No MP4 files found in video directory"
-        
-        # Test the first video
-        test_video = videos[0]
-        abs_path = str(test_video.absolute())
-        
-        result = f"🔍 **Video Loading Test**\n\n"
-        result += f"**Test Video**: {test_video.name}\n"
-        result += f"**Full Path**: {abs_path}\n"
-        result += f"**File Exists**: {test_video.exists()}\n"
-        result += f"**File Size**: {test_video.stat().st_size / (1024*1024):.1f} MB\n"
-        
-        # Try to return the path for testing
         return result
 
     def debug_video_folder(self):
@@ -949,34 +962,6 @@ class NASADownloaderGradio:
             return filter_keys.index(filter_key)
         except ValueError:
             return 3  # Default to 0211 (index 3)
-    
-    def open_plotly_in_browser(self):
-        """Open the Plotly plots in the default web browser."""
-        if self.plot_html_path and self.plot_html_path.exists():
-            import webbrowser
-            webbrowser.open(f'file://{self.plot_html_path.absolute()}')
-            return "🚀 Interactive plots opened in browser!"
-        else:
-            return "❌ No plots available. Please refresh data first."
-    
-    def save_plotly_plots(self):
-        """Save the current Plotly plots as an HTML file."""
-        if self.plotly_fig:
-            try:
-                # Save to a user-friendly location
-                plots_dir = Path("plots")
-                plots_dir.mkdir(exist_ok=True)
-                
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = plots_dir / f"solar_wind_plots_{timestamp}.html"
-                
-                import plotly.offline as pyo
-                pyo.plot(self.plotly_fig, filename=str(filename), auto_open=False)
-                return f"💾 Plots saved to: {filename.name}"
-            except Exception as e:
-                return f"❌ Error saving plots: {str(e)}"
-        else:
-            return "❌ No plots to save. Please refresh data first."
     
     def clear_video_player(self):
         """Clear/unmount the current video from the player to avoid file conflicts."""
@@ -1119,7 +1104,7 @@ class NASADownloaderGradio:
             formatted += "• Data updates every few minutes\n\n"
             
             formatted += "🔄 Click 'Refresh Data' for the latest measurements\n"
-            formatted += "📊 Click 'Update Plots' for detailed visualizations"
+            formatted += "📊 Click 'Update & Open Interactive Plots' for detailed visualizations"
             
             return formatted
             
@@ -1133,100 +1118,6 @@ class NASADownloaderGradio:
             return self.get_current_solar_wind_data()
         except Exception as e:
             return f"❌ Error refreshing data: {str(e)}"
-    
-    def _fetch_rtsw_data(self):
-        """Fetch solar wind data in background thread."""
-        try:
-            import urllib.request
-            import json
-            from datetime import datetime
-            
-            # NOAA provides JSON data for real-time solar wind
-            url = "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json"
-            
-            try:
-                with urllib.request.urlopen(url, timeout=10) as response:
-                    data = json.loads(response.read().decode())
-                
-                # Process and format the data
-                formatted_data = self._format_rtsw_data(data)
-                return formatted_data
-                
-            except Exception as e:
-                # If the JSON endpoint fails, show a placeholder with instructions
-                placeholder_data = self._get_rtsw_placeholder_data()
-                return placeholder_data
-                
-        except Exception as e:
-            return f"Error fetching data: {str(e)}"
-    
-    def _format_rtsw_data(self, data):
-        """Format the solar wind data for display."""
-        try:
-            formatted = "Real Time Solar Wind Data\n"
-            formatted += "=" * 50 + "\n"
-            formatted += f"Data retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-            formatted += f"Source: NOAA Space Weather Prediction Center\n\n"
-            
-            if isinstance(data, list) and len(data) > 1:
-                # Skip header row and get recent data
-                recent_entries = data[-10:] if len(data) > 10 else data[1:]
-                
-                formatted += "Recent Solar Wind Measurements:\n"
-                formatted += "-" * 40 + "\n"
-                
-                for entry in recent_entries:
-                    if isinstance(entry, list) and len(entry) >= 7:
-                        time_tag = entry[0]
-                        bx = entry[1] if entry[1] != '' else 'N/A'
-                        by = entry[2] if entry[2] != '' else 'N/A'
-                        bz = entry[3] if entry[3] != '' else 'N/A'
-                        bt = entry[4] if entry[4] != '' else 'N/A'
-                        
-                        formatted += f"Time: {time_tag}\n"
-                        formatted += f"  Magnetic Field - Bx: {bx} nT, By: {by} nT, Bz: {bz} nT\n"
-                        formatted += f"  Total Field (Bt): {bt} nT\n\n"
-            else:
-                formatted += "No recent data available.\n"
-            
-            formatted += "\nData Parameters:\n"
-            formatted += "• Bx, By, Bz: Magnetic field components in GSM coordinates (nanoTesla)\n"
-            formatted += "• Bt: Total magnetic field strength (nanoTesla)\n"
-            formatted += "• GSM: Geocentric Solar Magnetospheric coordinate system\n\n"
-            
-            formatted += "Note: This is real-time data and may contain gaps or anomalies.\n"
-            formatted += "For official space weather alerts, visit: https://www.swpc.noaa.gov/\n"
-            
-            return formatted
-            
-        except Exception as e:
-            return f"Error formatting data: {str(e)}\n\nRaw data preview:\n{str(data)[:500]}..."
-    
-    def _get_rtsw_placeholder_data(self):
-        """Get placeholder data when real data is not available."""
-        placeholder = "Real Time Solar Wind Data\n"
-        placeholder += "=" * 50 + "\n"
-        placeholder += f"Data retrieval attempted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        
-        placeholder += "🌐 NOAA Real-Time Solar Wind Data\n"
-        placeholder += "-" * 40 + "\n\n"
-        
-        placeholder += "This section displays real-time solar wind data from NOAA's\n"
-        placeholder += "Space Weather Prediction Center.\n\n"
-        
-        placeholder += "Data includes:\n"
-        placeholder += "• Solar Wind Speed (km/s)\n"
-        placeholder += "• Proton Density (particles/cm³)\n"
-        placeholder += "• Temperature (Kelvin)\n"
-        placeholder += "• Magnetic Field Components (nanoTesla)\n"
-        placeholder += "• Interplanetary Magnetic Field (IMF)\n\n"
-        
-        placeholder += "🔗 Data Sources:\n"
-        placeholder += "• Real-time Solar Wind: https://www.swpc.noaa.gov/products/real-time-solar-wind\n"
-        placeholder += "• Space Weather Alerts: https://www.swpc.noaa.gov/products/alerts-watches-and-warnings\n"
-        placeholder += "• Geomagnetic Activity: https://www.swpc.noaa.gov/products/planetary-k-index\n"
-        
-        return placeholder
     
     def update_rtsw_plots(self):
         """Update the RTSW plots with current data using beautiful Plotly visualization."""
@@ -1263,6 +1154,57 @@ class NASADownloaderGradio:
             
         except Exception as e:
             return f"Plot error: {str(e)}"
+    
+    def _update_plots_worker(self):
+        """Update plots in background thread."""
+        try:
+            import urllib.request
+            import json
+            from datetime import datetime, timedelta
+            import numpy as np
+            
+            # Get time range (default to 24 hours)
+            hours = 24
+            
+            # Fetch magnetic field data
+            mag_url = "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json"
+            
+            try:
+                with urllib.request.urlopen(mag_url, timeout=15) as response:
+                    mag_data = json.loads(response.read().decode())
+                
+                # Process magnetic field data
+                times, bz_values, bt_values = self._process_mag_data(mag_data, hours)
+                
+                # Try to fetch plasma data (speed and density)
+                plasma_url = "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json"
+                speed_values = []
+                density_values = []
+                
+                try:
+                    with urllib.request.urlopen(plasma_url, timeout=15) as response:
+                        plasma_data = json.loads(response.read().decode())
+                    
+                    _, speed_values, density_values = self._process_plasma_data(plasma_data, hours)
+                    
+                except Exception as e:
+                    print(f"Plasma data not available: {e}")
+                    # Generate realistic fallback data based on magnetic field data
+                    speed_values, density_values = self._generate_realistic_plasma_data(times, bz_values, bt_values)
+                
+                # Calculate temperature based on speed (realistic correlation)
+                temperature_values = self._calculate_temperature_from_speed(speed_values)
+                
+                # Create and save plots
+                plot_result = self._create_plotly_plots(times, bz_values, bt_values, speed_values, density_values, temperature_values, "24 hours")
+                return plot_result
+                
+            except Exception as e:
+                # If real data fails, show sample data with error message
+                return self._show_sample_data_with_error(str(e))
+                
+        except Exception as e:
+            return f"Plot update error: {str(e)}"
     
     def _update_plots_worker_with_options(self, plot_type, hours):
         """Update plots with specific options."""
@@ -1385,446 +1327,6 @@ class NASADownloaderGradio:
             temperature_values.append(temperature)
         
         return temperature_values
-    
-    def _create_correlation_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
-        """Create correlation analysis plots."""
-        try:
-            if not self.plotly_available:
-                return "Plotly not available"
-            
-            # Create correlation matrix plot
-            fig = make_subplots(
-                rows=2, cols=2,
-                subplot_titles=(
-                    '🔗 Parameter Correlations',
-                    '📊 Speed vs Temperature', 
-                    '⚡ Speed vs Density Relationship',
-                    '🌪️ Storm Activity Analysis'
-                ),
-                vertical_spacing=0.1
-            )
-            
-            # Filter valid data for correlation
-            valid_data = []
-            for i in range(len(times)):
-                if (i < len(bz_values) and i < len(bt_values) and 
-                    bz_values[i] is not None and bt_values[i] is not None):
-                    
-                    speed = speed_values[i] if i < len(speed_values) and speed_values[i] is not None else 400
-                    density = density_values[i] if i < len(density_values) and density_values[i] is not None else 5
-                    temp = temperature_values[i] if temperature_values and i < len(temperature_values) and temperature_values[i] is not None else 50000
-                    
-                    valid_data.append({
-                        'bz': bz_values[i],
-                        'bt': bt_values[i],
-                        'speed': speed,
-                        'density': density,
-                        'temperature': temp
-                    })
-            
-            if valid_data:
-                # Scatter plot: Speed vs Temperature
-                speed_vals = [d['speed'] for d in valid_data]
-                temp_vals = [d['temperature'] for d in valid_data]
-                
-                fig.add_trace(go.Scatter(
-                    x=speed_vals, y=temp_vals, mode='markers',
-                    name='Speed vs Temperature', 
-                    marker=dict(color='gold', size=4),
-                    hovertemplate='<b>Speed vs Temperature</b><br>Speed: %{x:.1f} km/s<br>Temperature: %{y:,.0f} K<extra></extra>'
-                ), row=1, col=2)
-                
-                # Scatter plot: Speed vs Density
-                density_vals = [d['density'] for d in valid_data]
-                
-                fig.add_trace(go.Scatter(
-                    x=speed_vals, y=density_vals, mode='markers',
-                    name='Speed vs Density', 
-                    marker=dict(color='orange', size=4),
-                    hovertemplate='<b>Speed vs Density</b><br>Speed: %{x:.1f} km/s<br>Density: %{y:.2f} p/cm³<extra></extra>'
-                ), row=2, col=1)
-                
-                # Storm activity histogram
-                bz_vals = [d['bz'] for d in valid_data]
-                storm_levels = ['Normal' if bz > -5 else 'Minor' if bz > -10 else 'Major' for bz in bz_vals]
-                storm_counts = {level: storm_levels.count(level) for level in ['Normal', 'Minor', 'Major']}
-                
-                fig.add_trace(go.Bar(
-                    x=list(storm_counts.keys()), y=list(storm_counts.values()),
-                    name='Storm Activity', 
-                    marker=dict(color=['green', 'yellow', 'red']),
-                    hovertemplate='<b>Storm Activity</b><br>Level: %{x}<br>Count: %{y}<extra></extra>'
-                ), row=2, col=2)
-                
-                # Correlation heatmap (simplified)
-                import numpy as np
-                params = ['Bz', 'Bt', 'Speed', 'Density', 'Temp']
-                param_data = [bz_vals, [d['bt'] for d in valid_data], speed_vals, density_vals, temp_vals]
-                
-                # Calculate correlation matrix
-                corr_matrix = np.corrcoef(param_data)
-                
-                fig.add_trace(go.Heatmap(
-                    z=corr_matrix,
-                    x=params,
-                    y=params,
-                    colorscale='RdBu',
-                    zmid=0,
-                    hovertemplate='<b>Correlation</b><br>%{x} vs %{y}<br>Correlation: %{z:.3f}<extra></extra>'
-                ), row=1, col=1)
-            
-            fig.update_layout(
-                title=f"Solar Wind Correlation Analysis - Enhanced with Temperature ({time_range})",
-                height=600,
-                showlegend=False,
-                template="plotly_dark"
-            )
-            
-            # Save plot
-            temp_dir = Path(tempfile.gettempdir())
-            self.plot_html_path = temp_dir / "solar_wind_correlation.html"
-            fig.write_html(str(self.plot_html_path))
-            self.plotly_fig = fig
-            
-            return f"Correlation analysis complete. {len(valid_data)} data points analyzed with temperature data."
-            
-        except Exception as e:
-            return f"Error creating correlation plots: {str(e)}"
-    
-    def _create_distribution_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
-        """Create distribution analysis plots."""
-        try:
-            if not self.plotly_available:
-                return "Plotly not available"
-            
-            # Create distribution plots - now with 3 rows for 5 parameters
-            fig = make_subplots(
-                rows=3, cols=2,
-                subplot_titles=(
-                    '📊 Bz Distribution',
-                    '📊 Bt Distribution', 
-                    '📊 Speed Distribution',
-                    '📊 Density Distribution',
-                    '📊 Temperature Distribution',
-                    '📊 Combined Statistics'
-                ),
-                vertical_spacing=0.1
-            )
-            
-            # Filter valid data and generate missing data
-            valid_bz = [val for val in bz_values if val is not None]
-            valid_bt = [val for val in bt_values if val is not None]
-            
-            # Generate realistic speed and density if missing
-            valid_speed = []
-            valid_density = []
-            valid_temperature = []
-            
-            for i in range(len(times)):
-                # Speed
-                if i < len(speed_values) and speed_values[i] is not None:
-                    speed = speed_values[i]
-                else:
-                    # Generate realistic speed
-                    bt_val = bt_values[i] if i < len(bt_values) and bt_values[i] is not None else 8
-                    speed = 350 + (bt_val * 8) + np.random.normal(0, 50)
-                    speed = max(250, min(800, speed))
-                valid_speed.append(speed)
-                
-                # Density
-                if i < len(density_values) and density_values[i] is not None:
-                    density = density_values[i]
-                else:
-                    # Generate realistic density (inverse correlation with speed)
-                    density = max(0.5, 15 - (speed - 300) / 50 + np.random.normal(0, 2))
-                valid_density.append(density)
-                
-                # Temperature
-                if temperature_values and i < len(temperature_values) and temperature_values[i] is not None:
-                    temp = temperature_values[i]
-                else:
-                    # Calculate temperature from speed
-                    temp = 8000 + (speed * 150) + np.random.normal(0, 15000)
-                    temp = max(5000, min(300000, temp))
-                valid_temperature.append(temp)
-            
-            # Bz histogram
-            if valid_bz:
-                fig.add_trace(go.Histogram(
-                    x=valid_bz, name='Bz Distribution',
-                    marker=dict(color='cyan'), nbinsx=20,
-                    hovertemplate='<b>Bz Distribution</b><br>Bz: %{x:.2f} nT<br>Count: %{y}<extra></extra>'
-                ), row=1, col=1)
-            
-            # Bt histogram
-            if valid_bt:
-                fig.add_trace(go.Histogram(
-                    x=valid_bt, name='Bt Distribution',
-                    marker=dict(color='orange'), nbinsx=20,
-                    hovertemplate='<b>Bt Distribution</b><br>Bt: %{x:.2f} nT<br>Count: %{y}<extra></extra>'
-                ), row=1, col=2)
-            
-            # Speed histogram
-            if valid_speed:
-                fig.add_trace(go.Histogram(
-                    x=valid_speed, name='Speed Distribution',
-                    marker=dict(color='lime'), nbinsx=20,
-                    hovertemplate='<b>Speed Distribution</b><br>Speed: %{x:.1f} km/s<br>Count: %{y}<extra></extra>'
-                ), row=2, col=1)
-            
-            # Density histogram
-            if valid_density:
-                fig.add_trace(go.Histogram(
-                    x=valid_density, name='Density Distribution',
-                    marker=dict(color='magenta'), nbinsx=20,
-                    hovertemplate='<b>Density Distribution</b><br>Density: %{x:.2f} p/cm³<br>Count: %{y}<extra></extra>'
-                ), row=2, col=2)
-            
-            # Temperature histogram
-            if valid_temperature:
-                fig.add_trace(go.Histogram(
-                    x=valid_temperature, name='Temperature Distribution',
-                    marker=dict(color='gold'), nbinsx=20,
-                    hovertemplate='<b>Temperature Distribution</b><br>Temperature: %{x:,.0f} K<br>Count: %{y}<extra></extra>'
-                ), row=3, col=1)
-            
-            # Combined statistics summary
-            import numpy as np
-            stats_text = []
-            if valid_bz:
-                stats_text.append(f"Bz: μ={np.mean(valid_bz):.2f}, σ={np.std(valid_bz):.2f} nT")
-            if valid_bt:
-                stats_text.append(f"Bt: μ={np.mean(valid_bt):.2f}, σ={np.std(valid_bt):.2f} nT")
-            if valid_speed:
-                stats_text.append(f"Speed: μ={np.mean(valid_speed):.1f}, σ={np.std(valid_speed):.1f} km/s")
-            if valid_density:
-                stats_text.append(f"Density: μ={np.mean(valid_density):.2f}, σ={np.std(valid_density):.2f} p/cm³")
-            if valid_temperature:
-                stats_text.append(f"Temperature: μ={np.mean(valid_temperature):,.0f}, σ={np.std(valid_temperature):,.0f} K")
-            
-            # Add text annotation for statistics
-            fig.add_annotation(
-                text="<br>".join(stats_text),
-                xref="x domain", yref="y domain",
-                x=0.5, y=0.5, xanchor='center', yanchor='middle',
-                showarrow=False,
-                font=dict(size=12, color="white"),
-                bgcolor="rgba(0,0,0,0.5)",
-                bordercolor="white",
-                borderwidth=1,
-                row=3, col=2
-            )
-            
-            fig.update_layout(
-                title=f"Solar Wind Parameter Distributions - Complete Dataset ({time_range})",
-                height=800,  # Increased height for 3 rows
-                showlegend=False,
-                template="plotly_dark"
-            )
-            
-            # Save plot
-            temp_dir = Path(tempfile.gettempdir())
-            self.plot_html_path = temp_dir / "solar_wind_distributions.html"
-            fig.write_html(str(self.plot_html_path))
-            self.plotly_fig = fig
-            
-            return f"Distribution analysis complete. Data points: Bz({len(valid_bz)}), Bt({len(valid_bt)}), Speed({len(valid_speed)}), Density({len(valid_density)}), Temperature({len(valid_temperature)})"
-            
-        except Exception as e:
-            return f"Error creating distribution plots: {str(e)}"
-    
-    def _create_statistical_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
-        """Create statistical summary plots."""
-        try:
-            import numpy as np
-            
-            if not self.plotly_available:
-                return "Plotly not available"
-            
-            # Create statistical summary
-            fig = make_subplots(
-                rows=2, cols=2,
-                subplot_titles=(
-                    '📈 Parameter Statistics',
-                    '📊 Box Plot Analysis', 
-                    '⏱️ Time Series Summary',
-                    '🎯 Data Quality Metrics'
-                ),
-                vertical_spacing=0.1
-            )
-            
-            # Calculate statistics - now including temperature
-            params = ['Bz', 'Bt', 'Speed', 'Density', 'Temperature']
-            datasets = [bz_values, bt_values, speed_values, density_values, temperature_values or []]
-            
-            stats_data = []
-            for param, data in zip(params, datasets):
-                valid_data = [val for val in data if val is not None]
-                if valid_data:
-                    stats_data.append({
-                        'param': param,
-                        'mean': np.mean(valid_data),
-                        'std': np.std(valid_data),
-                        'min': np.min(valid_data),
-                        'max': np.max(valid_data),
-                        'count': len(valid_data)
-                    })
-            
-            # Statistics bar chart
-            if stats_data:
-                fig.add_trace(go.Bar(
-                    x=[s['param'] for s in stats_data],
-                    y=[s['mean'] for s in stats_data],
-                    name='Mean Values',
-                    marker=dict(color=['cyan', 'orange', 'lime', 'magenta', 'gold'][:len(stats_data)])
-                ), row=1, col=1)
-                
-                # Box plots
-                for i, (param, data) in enumerate(zip(params, datasets)):
-                    valid_data = [val for val in data if val is not None]
-                    if valid_data:
-                        fig.add_trace(go.Box(
-                            y=valid_data, name=param,
-                            marker=dict(color=['cyan', 'orange', 'lime', 'magenta', 'gold'][i])
-                        ), row=1, col=2)
-            
-            fig.update_layout(
-                title=f"Solar Wind Statistical Analysis - Complete Parameter Set ({time_range})",
-                height=600,
-                showlegend=False,
-                template="plotly_dark"
-            )
-            
-            # Save plot
-            import tempfile
-            temp_dir = Path(tempfile.gettempdir())
-            self.plot_html_path = temp_dir / "solar_wind_statistics.html"
-            fig.write_html(str(self.plot_html_path))
-            self.plotly_fig = fig
-            
-            return f"Statistical analysis complete. {len(stats_data)} parameters analyzed including temperature."
-            
-        except Exception as e:
-            return f"Error creating statistical plots: {str(e)}"
-    
-    def _update_plots_worker(self):
-        """Update plots in background thread."""
-        try:
-            import urllib.request
-            import json
-            from datetime import datetime, timedelta
-            import numpy as np
-            
-            # Get time range (default to 24 hours)
-            hours = 24
-            
-            # Fetch magnetic field data
-            mag_url = "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json"
-            
-            try:
-                with urllib.request.urlopen(mag_url, timeout=15) as response:
-                    mag_data = json.loads(response.read().decode())
-                
-                # Process magnetic field data
-                times, bz_values, bt_values = self._process_mag_data(mag_data, hours)
-                
-                # Try to fetch plasma data (speed and density)
-                plasma_url = "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json"
-                speed_values = []
-                density_values = []
-                
-                try:
-                    with urllib.request.urlopen(plasma_url, timeout=15) as response:
-                        plasma_data = json.loads(response.read().decode())
-                    
-                    _, speed_values, density_values = self._process_plasma_data(plasma_data, hours)
-                    
-                except Exception as e:
-                    print(f"Plasma data not available: {e}")
-                    # Generate realistic fallback data based on magnetic field data
-                    speed_values, density_values = self._generate_realistic_plasma_data(times, bz_values, bt_values)
-                
-                # Calculate temperature based on speed (realistic correlation)
-                temperature_values = self._calculate_temperature_from_speed(speed_values)
-                
-                # Create and save plots
-                plot_result = self._create_plotly_plots(times, bz_values, bt_values, speed_values, density_values, temperature_values, "24 hours")
-                return plot_result
-                
-            except Exception as e:
-                # If real data fails, show sample data with error message
-                return self._show_sample_data_with_error(str(e))
-                
-        except Exception as e:
-            return f"Plot update error: {str(e)}"
-    
-    def _process_mag_data(self, data, hours):
-        """Process magnetic field data for plotting."""
-        from datetime import datetime, timedelta
-        
-        times = []
-        bz_values = []
-        bt_values = []
-        
-        if isinstance(data, list) and len(data) > 1:
-            # Skip header row
-            data_rows = data[1:]
-            
-            # Filter data for the requested time range
-            cutoff_time = datetime.now() - timedelta(hours=hours)
-            
-            for row in data_rows:
-                if isinstance(row, list) and len(row) >= 7:
-                    try:
-                        time_str = row[0]
-                        time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S.%f')
-                        
-                        if time_obj >= cutoff_time:
-                            bz = float(row[3]) if row[3] != '' else None
-                            bt = float(row[6]) if row[6] != '' else None
-                            
-                            times.append(time_obj)
-                            bz_values.append(bz)
-                            bt_values.append(bt)
-                            
-                    except (ValueError, IndexError):
-                        continue
-        
-        return times, bz_values, bt_values
-    
-    def _process_plasma_data(self, data, hours):
-        """Process plasma data for plotting."""
-        from datetime import datetime, timedelta
-        
-        times = []
-        speed_values = []
-        density_values = []
-        
-        if isinstance(data, list) and len(data) > 1:
-            # Skip header row
-            data_rows = data[1:]
-            
-            # Filter data for the requested time range
-            cutoff_time = datetime.now() - timedelta(hours=hours)
-            
-            for row in data_rows:
-                if isinstance(row, list) and len(row) >= 3:
-                    try:
-                        time_str = row[0]
-                        time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S.%f')
-                        
-                        if time_obj >= cutoff_time:
-                            density = float(row[1]) if row[1] != '' else None
-                            speed = float(row[2]) if row[2] != '' else None
-                            
-                            times.append(time_obj)
-                            density_values.append(density)
-                            speed_values.append(speed)
-                            
-                    except (ValueError, IndexError):
-                        continue
-        
-        return times, speed_values, density_values
     
     def _create_plotly_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
         """Create Plotly plots and save as HTML."""
@@ -1962,6 +1464,395 @@ class NASADownloaderGradio:
         except Exception as e:
             return f"Error creating Plotly plots: {str(e)}"
     
+    def _create_correlation_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
+        """Create correlation analysis plots."""
+        try:
+            if not self.plotly_available:
+                return "Plotly not available"
+            
+            # Create correlation matrix plot
+            fig = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=(
+                    '🔗 Parameter Correlations',
+                    '📊 Speed vs Temperature', 
+                    '⚡ Speed vs Density Relationship',
+                    '🌪️ Storm Activity Analysis'
+                ),
+                vertical_spacing=0.1
+            )
+            
+            # Filter valid data for correlation
+            valid_data = []
+            for i in range(len(times)):
+                if (i < len(bz_values) and i < len(bt_values) and 
+                    bz_values[i] is not None and bt_values[i] is not None):
+                    
+                    speed = speed_values[i] if i < len(speed_values) and speed_values[i] is not None else 400
+                    density = density_values[i] if i < len(density_values) and density_values[i] is not None else 5
+                    temp = temperature_values[i] if temperature_values and i < len(temperature_values) and temperature_values[i] is not None else 50000
+                    
+                    valid_data.append({
+                        'bz': bz_values[i],
+                        'bt': bt_values[i],
+                        'speed': speed,
+                        'density': density,
+                        'temperature': temp
+                    })
+            
+            if valid_data:
+                # Scatter plot: Speed vs Temperature
+                speed_vals = [d['speed'] for d in valid_data]
+                temp_vals = [d['temperature'] for d in valid_data]
+                
+                fig.add_trace(go.Scatter(
+                    x=speed_vals, y=temp_vals, mode='markers',
+                    name='Speed vs Temperature', 
+                    marker=dict(color='gold', size=4),
+                    hovertemplate='<b>Speed vs Temperature</b><br>Speed: %{x:.1f} km/s<br>Temperature: %{y:,.0f} K<extra></extra>'
+                ), row=1, col=2)
+                
+                # Scatter plot: Speed vs Density
+                density_vals = [d['density'] for d in valid_data]
+                
+                fig.add_trace(go.Scatter(
+                    x=speed_vals, y=density_vals, mode='markers',
+                    name='Speed vs Density', 
+                    marker=dict(color='orange', size=4),
+                    hovertemplate='<b>Speed vs Density</b><br>Speed: %{x:.1f} km/s<br>Density: %{y:.2f} p/cm³<extra></extra>'
+                ), row=2, col=1)
+                
+                # Storm activity histogram
+                bz_vals = [d['bz'] for d in valid_data]
+                storm_levels = ['Normal' if bz > -5 else 'Minor' if bz > -10 else 'Major' for bz in bz_vals]
+                storm_counts = {level: storm_levels.count(level) for level in ['Normal', 'Minor', 'Major']}
+                
+                fig.add_trace(go.Bar(
+                    x=list(storm_counts.keys()), y=list(storm_counts.values()),
+                    name='Storm Activity', 
+                    marker=dict(color=['green', 'yellow', 'red']),
+                    hovertemplate='<b>Storm Activity</b><br>Level: %{x}<br>Count: %{y}<extra></extra>'
+                ), row=2, col=2)
+                
+                # Correlation heatmap (simplified)
+                import numpy as np
+                params = ['Bz', 'Bt', 'Speed', 'Density', 'Temp']
+                param_data = [bz_vals, [d['bt'] for d in valid_data], speed_vals, density_vals, temp_vals]
+                
+                # Calculate correlation matrix
+                corr_matrix = np.corrcoef(param_data)
+                
+                fig.add_trace(go.Heatmap(
+                    z=corr_matrix,
+                    x=params,
+                    y=params,
+                    colorscale='RdBu',
+                    zmid=0,
+                    hovertemplate='<b>Correlation</b><br>%{x} vs %{y}<br>Correlation: %{z:.3f}<extra></extra>'
+                ), row=1, col=1)
+            
+            fig.update_layout(
+                title=f"Solar Wind Correlation Analysis - Enhanced with Temperature ({time_range})",
+                height=600,
+                showlegend=False,
+                template="plotly_dark"
+            )
+            
+            # Save plot
+            temp_dir = Path(tempfile.gettempdir())
+            self.plot_html_path = temp_dir / "solar_wind_correlation.html"
+            fig.write_html(str(self.plot_html_path))
+            self.plotly_fig = fig
+            
+            return f"Correlation analysis complete. {len(valid_data)} data points analyzed with temperature data."
+            
+        except Exception as e:
+            return f"Error creating correlation plots: {str(e)}"
+    
+    def _create_distribution_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
+        """Create distribution analysis plots."""
+        try:
+            import numpy as np
+            
+            if not self.plotly_available:
+                return "Plotly not available"
+            
+            # Create distribution plots - now with 3 rows for 5 parameters
+            fig = make_subplots(
+                rows=3, cols=2,
+                subplot_titles=(
+                    '📊 Bz Distribution',
+                    '📊 Bt Distribution', 
+                    '📊 Speed Distribution',
+                    '📊 Density Distribution',
+                    '📊 Temperature Distribution',
+                    '📊 Combined Statistics'
+                ),
+                vertical_spacing=0.1
+            )
+            
+            # Filter valid data and generate missing data
+            valid_bz = [val for val in bz_values if val is not None]
+            valid_bt = [val for val in bt_values if val is not None]
+            
+            # Generate realistic speed and density if missing
+            valid_speed = []
+            valid_density = []
+            valid_temperature = []
+            
+            for i in range(len(times)):
+                # Speed
+                if i < len(speed_values) and speed_values[i] is not None:
+                    speed = speed_values[i]
+                else:
+                    # Generate realistic speed
+                    bt_val = bt_values[i] if i < len(bt_values) and bt_values[i] is not None else 8
+                    speed = 350 + (bt_val * 8) + np.random.normal(0, 50)
+                    speed = max(250, min(800, speed))
+                valid_speed.append(speed)
+                
+                # Density
+                if i < len(density_values) and density_values[i] is not None:
+                    density = density_values[i]
+                else:
+                    # Generate realistic density (inverse correlation with speed)
+                    density = max(0.5, 15 - (speed - 300) / 50 + np.random.normal(0, 2))
+                valid_density.append(density)
+                
+                # Temperature
+                if temperature_values and i < len(temperature_values) and temperature_values[i] is not None:
+                    temp = temperature_values[i]
+                else:
+                    # Calculate temperature from speed
+                    temp = 8000 + (speed * 150) + np.random.normal(0, 15000)
+                    temp = max(5000, min(300000, temp))
+                valid_temperature.append(temp)
+            
+            # Bz histogram
+            if valid_bz:
+                fig.add_trace(go.Histogram(
+                    x=valid_bz, name='Bz Distribution',
+                    marker=dict(color='cyan'), nbinsx=20,
+                    hovertemplate='<b>Bz Distribution</b><br>Bz: %{x:.2f} nT<br>Count: %{y}<extra></extra>'
+                ), row=1, col=1)
+            
+            # Bt histogram
+            if valid_bt:
+                fig.add_trace(go.Histogram(
+                    x=valid_bt, name='Bt Distribution',
+                    marker=dict(color='orange'), nbinsx=20,
+                    hovertemplate='<b>Bt Distribution</b><br>Bt: %{x:.2f} nT<br>Count: %{y}<extra></extra>'
+                ), row=1, col=2)
+            
+            # Speed histogram
+            if valid_speed:
+                fig.add_trace(go.Histogram(
+                    x=valid_speed, name='Speed Distribution',
+                    marker=dict(color='lime'), nbinsx=20,
+                    hovertemplate='<b>Speed Distribution</b><br>Speed: %{x:.1f} km/s<br>Count: %{y}<extra></extra>'
+                ), row=2, col=1)
+            
+            # Density histogram
+            if valid_density:
+                fig.add_trace(go.Histogram(
+                    x=valid_density, name='Density Distribution',
+                    marker=dict(color='magenta'), nbinsx=20,
+                    hovertemplate='<b>Density Distribution</b><br>Density: %{x:.2f} p/cm³<br>Count: %{y}<extra></extra>'
+                ), row=2, col=2)
+            
+            # Temperature histogram
+            if valid_temperature:
+                fig.add_trace(go.Histogram(
+                    x=valid_temperature, name='Temperature Distribution',
+                    marker=dict(color='gold'), nbinsx=20,
+                    hovertemplate='<b>Temperature Distribution</b><br>Temperature: %{x:,.0f} K<br>Count: %{y}<extra></extra>'
+                ), row=3, col=1)
+            
+            # Combined statistics summary
+            stats_text = []
+            if valid_bz:
+                stats_text.append(f"Bz: μ={np.mean(valid_bz):.2f}, σ={np.std(valid_bz):.2f} nT")
+            if valid_bt:
+                stats_text.append(f"Bt: μ={np.mean(valid_bt):.2f}, σ={np.std(valid_bt):.2f} nT")
+            if valid_speed:
+                stats_text.append(f"Speed: μ={np.mean(valid_speed):.1f}, σ={np.std(valid_speed):.1f} km/s")
+            if valid_density:
+                stats_text.append(f"Density: μ={np.mean(valid_density):.2f}, σ={np.std(valid_density):.2f} p/cm³")
+            if valid_temperature:
+                stats_text.append(f"Temperature: μ={np.mean(valid_temperature):,.0f}, σ={np.std(valid_temperature):,.0f} K")
+            
+            # Add text annotation for statistics
+            fig.add_annotation(
+                text="<br>".join(stats_text),
+                xref="x domain", yref="y domain",
+                x=0.5, y=0.5, xanchor='center', yanchor='middle',
+                showarrow=False,
+                font=dict(size=12, color="white"),
+                bgcolor="rgba(0,0,0,0.5)",
+                bordercolor="white",
+                borderwidth=1,
+                row=3, col=2
+            )
+            
+            fig.update_layout(
+                title=f"Solar Wind Parameter Distributions - Complete Dataset ({time_range})",
+                height=800,  # Increased height for 3 rows
+                showlegend=False,
+                template="plotly_dark"
+            )
+            
+            # Save plot
+            temp_dir = Path(tempfile.gettempdir())
+            self.plot_html_path = temp_dir / "solar_wind_distributions.html"
+            fig.write_html(str(self.plot_html_path))
+            self.plotly_fig = fig
+            
+            return f"Distribution analysis complete. Data points: Bz({len(valid_bz)}), Bt({len(valid_bt)}), Speed({len(valid_speed)}), Density({len(valid_density)}), Temperature({len(valid_temperature)})"
+            
+        except Exception as e:
+            return f"Error creating distribution plots: {str(e)}"
+    
+    def _create_statistical_plots(self, times, bz_values, bt_values, speed_values, density_values, temperature_values=None, time_range="24 hours"):
+        """Create statistical summary plots."""
+        try:
+            import numpy as np
+            
+            if not self.plotly_available:
+                return "Plotly not available"
+            
+            # Create statistical summary
+            fig = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=(
+                    '📈 Parameter Statistics',
+                    '📊 Box Plot Analysis', 
+                    '⏱️ Time Series Summary',
+                    '🎯 Data Quality Metrics'
+                ),
+                vertical_spacing=0.1
+            )
+            
+            # Calculate statistics - now including temperature
+            params = ['Bz', 'Bt', 'Speed', 'Density', 'Temperature']
+            datasets = [bz_values, bt_values, speed_values, density_values, temperature_values or []]
+            
+            stats_data = []
+            for param, data in zip(params, datasets):
+                valid_data = [val for val in data if val is not None]
+                if valid_data:
+                    stats_data.append({
+                        'param': param,
+                        'mean': np.mean(valid_data),
+                        'std': np.std(valid_data),
+                        'min': np.min(valid_data),
+                        'max': np.max(valid_data),
+                        'count': len(valid_data)
+                    })
+            
+            # Statistics bar chart
+            if stats_data:
+                fig.add_trace(go.Bar(
+                    x=[s['param'] for s in stats_data],
+                    y=[s['mean'] for s in stats_data],
+                    name='Mean Values',
+                    marker=dict(color=['cyan', 'orange', 'lime', 'magenta', 'gold'][:len(stats_data)])
+                ), row=1, col=1)
+                
+                # Box plots
+                for i, (param, data) in enumerate(zip(params, datasets)):
+                    valid_data = [val for val in data if val is not None]
+                    if valid_data:
+                        fig.add_trace(go.Box(
+                            y=valid_data, name=param,
+                            marker=dict(color=['cyan', 'orange', 'lime', 'magenta', 'gold'][i])
+                        ), row=1, col=2)
+            
+            fig.update_layout(
+                title=f"Solar Wind Statistical Analysis - Complete Parameter Set ({time_range})",
+                height=600,
+                showlegend=False,
+                template="plotly_dark"
+            )
+            
+            # Save plot
+            temp_dir = Path(tempfile.gettempdir())
+            self.plot_html_path = temp_dir / "solar_wind_statistics.html"
+            fig.write_html(str(self.plot_html_path))
+            self.plotly_fig = fig
+            
+            return f"Statistical analysis complete. {len(stats_data)} parameters analyzed including temperature."
+            
+        except Exception as e:
+            return f"Error creating statistical plots: {str(e)}"
+    
+    def _process_mag_data(self, data, hours):
+        """Process magnetic field data for plotting."""
+        from datetime import datetime, timedelta
+        
+        times = []
+        bz_values = []
+        bt_values = []
+        
+        if isinstance(data, list) and len(data) > 1:
+            # Skip header row
+            data_rows = data[1:]
+            
+            # Filter data for the requested time range
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            
+            for row in data_rows:
+                if isinstance(row, list) and len(row) >= 7:
+                    try:
+                        time_str = row[0]
+                        time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S.%f')
+                        
+                        if time_obj >= cutoff_time:
+                            bz = float(row[3]) if row[3] != '' else None
+                            bt = float(row[6]) if row[6] != '' else None
+                            
+                            times.append(time_obj)
+                            bz_values.append(bz)
+                            bt_values.append(bt)
+                            
+                    except (ValueError, IndexError):
+                        continue
+        
+        return times, bz_values, bt_values
+    
+    def _process_plasma_data(self, data, hours):
+        """Process plasma data for plotting."""
+        from datetime import datetime, timedelta
+        
+        times = []
+        speed_values = []
+        density_values = []
+        
+        if isinstance(data, list) and len(data) > 1:
+            # Skip header row
+            data_rows = data[1:]
+            
+            # Filter data for the requested time range
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            
+            for row in data_rows:
+                if isinstance(row, list) and len(row) >= 3:
+                    try:
+                        time_str = row[0]
+                        time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S.%f')
+                        
+                        if time_obj >= cutoff_time:
+                            density = float(row[1]) if row[1] != '' else None
+                            speed = float(row[2]) if row[2] != '' else None
+                            
+                            times.append(time_obj)
+                            density_values.append(density)
+                            speed_values.append(speed)
+                            
+                    except (ValueError, IndexError):
+                        continue
+        
+        return times, speed_values, density_values
+    
     def _show_sample_data_with_error(self, error_msg):
         """Show sample data when real data is not available."""
         return f"🎨 Sample data displayed - {error_msg}"
@@ -2015,7 +1906,6 @@ class NASADownloaderGradio:
                 
         except Exception as e:
             return f"❌ Error updating and opening plots: {str(e)}"
-    
     def create_interface(self):
         """Create the complete Gradio interface with all features."""
         
@@ -2315,7 +2205,6 @@ class NASADownloaderGradio:
                             
                             with gr.Row():
                                 create_video_btn = gr.Button("🎬 Create Video for Date Range", variant="primary")
-                                create_all_btn = gr.Button("🎬 Create Combined Video (All Available)")
                         
                         with gr.Column():
                             video_output = gr.Textbox(label="Video Creation Status", lines=8)
@@ -2340,7 +2229,7 @@ class NASADownloaderGradio:
                             
                             # Or select from created videos
                             available_videos = gr.Dropdown(
-                                choices=self.get_video_list(),
+                                choices=[],  # Start empty, will be populated on load
                                 label="Or Select from Created Videos",
                                 info="Choose from previously created videos"
                             )
@@ -2403,6 +2292,11 @@ class NASADownloaderGradio:
                         inputs=[video_start_date, video_end_date, video_fps, video_resolution, video_filter],
                         outputs=[video_player, video_output]
                     )
+                    
+                    refresh_videos_btn.click(
+                        fn=self.refresh_video_list_and_clear,
+                        outputs=[available_videos, video_player, selected_video_player]
+                    )
                 
                 # Solar Wind Tab
                 with gr.Tab("🌬️ Solar Wind"):
@@ -2410,95 +2304,52 @@ class NASADownloaderGradio:
                     
                     with gr.Row():
                         with gr.Column(scale=2):
-                            # Data Controls
-                            gr.Markdown("#### 🎛️ Data Controls")
+                            gr.Markdown("#### 🌐 Current Solar Wind Parameters")
                             
-                            with gr.Row():
-                                refresh_rtsw_btn = gr.Button("🔄 Refresh Data", variant="primary")
-                                open_plots_btn = gr.Button("� Update & Open Interactive Plots", variant="secondary")
-                            
-                            # Real-time data display - automatically load data
-                            gr.Markdown("#### 📊 Current Solar Wind Parameters")
-                            rtsw_data_display = gr.Textbox(
-                                label="Real-Time Solar Wind Data",
-                                lines=15,
-                                value=self.get_current_solar_wind_data(),  # Load data immediately
-                                interactive=False
-                            )
-                            
-                        with gr.Column(scale=3):
-                            # Plotly Interactive Plots
-                            gr.Markdown("#### 📈 Interactive Solar Wind Plots (Plotly)")
-                            plotly_status = gr.Textbox(
-                                label="Plotly Plot Status",
-                                lines=3,
-                                value="🎨 Beautiful interactive plots ready! Click 'Update Plots' to generate real-time visualizations.\n\nFeatures: Interactive zooming, hover data, professional styling",
-                                interactive=False
+                            # Auto-load current data on startup
+                            current_data_display = gr.Markdown(
+                                value=self.get_current_solar_wind_data(),
+                                label="Current Data"
                             )
                             
                             with gr.Row():
-                                save_plots_btn = gr.Button("💾 Save Plots as HTML")
-                                
-                            # Enhanced Plotly Analysis Options
-                            gr.Markdown("#### 📊 Advanced Plot Options")
+                                refresh_data_btn = gr.Button("🔄 Refresh Data", variant="secondary")
+                        
+                        with gr.Column(scale=1):
+                            gr.Markdown("#### 📊 Data Controls")
                             
-                            # Plot Type Selection (Radio buttons)
                             plot_type = gr.Radio(
                                 choices=["time_series", "correlation", "distribution", "statistical"],
                                 value="time_series",
                                 label="Plot Type",
-                                info="Choose the type of analysis to display"
+                                info="Select visualization type"
                             )
                             
-                            # Time Range Selection (Radio buttons)
                             time_range = gr.Radio(
                                 choices=["6 hours", "12 hours", "24 hours", "3 days", "7 days"],
                                 value="24 hours",
                                 label="Time Range",
-                                info="Data time range for analysis"
+                                info="Data time window"
                             )
                             
-                            enhanced_plotly_status = gr.Textbox(
-                                label="Enhanced Analysis Status",
-                                lines=3,
-                                value="🎨 Advanced Plotly analysis ready! Select plot type and time range, then click 'Update Plots'.\n\nTypes: Time series, correlation matrices, distributions, statistical summaries",
-                                interactive=False
+                            update_open_btn = gr.Button("🔄 Update & Open Interactive Plots", variant="primary")
+                            
+                            plot_status = gr.Textbox(
+                                label="Plot Status",
+                                lines=4,
+                                value="Click 'Update & Open Interactive Plots' to generate visualizations"
                             )
                     
-                    # Historical Analysis
-                    with gr.Row():
-                        gr.Markdown("#### 📈 Historical Data & Analysis")
-                        historical_analysis = gr.Textbox(
-                            label="Historical Solar Wind Analysis",
-                            lines=8,
-                            value="Statistical analysis and trends will appear here after data refresh.\n\nAnalysis includes:\n• Average values over selected time period\n• Maximum and minimum values\n• Geomagnetic storm indicators\n• Data quality and coverage statistics",
-                            interactive=False
-                        )
-                    
-                    # Related Links
-                    gr.Markdown("""
-                    #### 🔗 Related Links
-                    - **NOAA Space Weather**: https://www.swpc.noaa.gov/
-                    - **Real-time Solar Wind**: https://www.swpc.noaa.gov/products/real-time-solar-wind
-                    - **Space Weather Alerts**: https://www.swpc.noaa.gov/products/alerts-watches-and-warnings
-                    - **Geomagnetic Activity**: https://www.swpc.noaa.gov/products/planetary-k-index
-                    """)
-                    
-                    # Event handlers for Solar Wind tab
-                    refresh_rtsw_btn.click(
+                    # Event handlers
+                    refresh_data_btn.click(
                         fn=self.refresh_rtsw_data,
-                        outputs=[rtsw_data_display]
+                        outputs=[current_data_display]
                     )
                     
-                    open_plots_btn.click(
+                    update_open_btn.click(
                         fn=self.update_and_open_plots,
                         inputs=[plot_type, time_range],
-                        outputs=[plotly_status]
-                    )
-                    
-                    save_plots_btn.click(
-                        fn=self.save_plotly_plots,
-                        outputs=[plotly_status]
+                        outputs=[plot_status]
                     )
                 
                 # Settings Tab
@@ -2507,138 +2358,77 @@ class NASADownloaderGradio:
                     
                     with gr.Row():
                         with gr.Column():
-                            gr.Markdown("#### 🔧 Download Settings")
-                            rate_limit = gr.Slider(
-                                minimum=0.5,
-                                maximum=5.0,
-                                value=1.0,
-                                step=0.1,
-                                label="Rate Limit Delay (seconds)",
-                                info="Delay between downloads to be respectful to NASA servers"
-                            )
+                            gr.Markdown("#### 🔧 Custom Keywords")
+                            gr.Markdown("Customize search keywords for each solar filter")
                             
-                            gr.Markdown("#### 🔍 Custom Keyword Search")
-                            gr.Markdown("*Customize search keywords for each solar filter. Leave empty to use defaults.*")
-                            
-                            # Create custom keyword inputs for each filter
+                            # Create keyword inputs for each filter
                             keyword_inputs = {}
-                            for filter_num, data in list(self.filter_data.items())[:6]:  # First 6 filters
+                            keyword_outputs = []
+                            
+                            for filter_key, filter_info in self.filter_data.items():
                                 with gr.Row():
-                                    gr.Markdown(f"**{data['name']}** ({filter_num})")
-                                    keyword_inputs[filter_num] = gr.Textbox(
-                                        value=filter_num,
-                                        placeholder=f"Default: {filter_num}",
+                                    gr.Markdown(f"**{filter_info['name']}**")
+                                    keyword_input = gr.Textbox(
+                                        value=self.custom_keywords.get(filter_key, filter_key),
+                                        label=f"Keyword for {filter_key}",
+                                        placeholder=filter_key,
                                         scale=2
+                                    )
+                                    update_keyword_btn = gr.Button("Update", size="sm", scale=0)
+                                    
+                                    keyword_inputs[filter_key] = keyword_input
+                                    
+                                    # Create update function for this specific filter
+                                    def make_update_fn(fkey):
+                                        return lambda keyword: self.update_custom_keyword(fkey, keyword)
+                                    
+                                    update_keyword_btn.click(
+                                        fn=make_update_fn(filter_key),
+                                        inputs=[keyword_input],
+                                        outputs=[]
                                     )
                             
                             with gr.Row():
-                                reset_keywords_btn = gr.Button("🔄 Reset to Defaults", size="sm")
-                                apply_keywords_btn = gr.Button("✅ Apply Keywords", variant="primary")
+                                reset_keywords_btn = gr.Button("🔄 Reset All to Defaults", variant="secondary")
                             
                             keyword_status = gr.Textbox(label="Keyword Status", lines=2)
+                            
+                            reset_keywords_btn.click(
+                                fn=self.reset_custom_keywords,
+                                outputs=[keyword_status]
+                            )
                         
                         with gr.Column():
-                            gr.Markdown("#### 📁 Data Management")
+                            gr.Markdown("#### 🛠️ Utilities")
+                            
                             with gr.Row():
-                                open_data_btn = gr.Button("📁 Open Data Folder")
-                                cleanup_btn = gr.Button("🧹 Clean Up Corrupted Files")
-                                debug_video_btn = gr.Button("🔍 Debug Video Folder")
-                                test_video_btn = gr.Button("🎬 Test Video Loading")
+                                open_folder_btn = gr.Button("📁 Open Data Folder")
+                                cleanup_btn = gr.Button("🧹 Cleanup Corrupted Files")
                             
-                            data_management_output = gr.Textbox(label="Data Management Status", lines=2)
+                            utility_output = gr.Textbox(label="Utility Output", lines=4)
                             
-                            gr.Markdown("#### 🎬 Video Debug Info")
-                            video_debug_output = gr.Textbox(label="Video Folder Debug", lines=6)
-                            video_test_output = gr.Textbox(label="Video Loading Test", lines=4)
-                    
-                    # Keyword management
-                    reset_keywords_btn.click(
-                        fn=self.reset_custom_keywords,
-                        outputs=[keyword_status]
-                    )
-                    
-                    # Data management
-                    open_data_btn.click(
-                        fn=self.open_data_folder,
-                        outputs=[data_management_output]
-                    )
-                    
-                    cleanup_btn.click(
-                        fn=self.cleanup_corrupted_files,
-                        outputs=[data_management_output]
-                    )
-                    
-                    debug_video_btn.click(
-                        fn=self.debug_video_folder,
-                        outputs=[video_debug_output]
-                    )
-                    
-                    test_video_btn.click(
-                        fn=self.test_video_loading,
-                        outputs=[video_test_output]
-                    )
-                    
-                    # Video controls
-                    refresh_videos_btn.click(
-                        fn=self.refresh_video_list_and_clear,
-                        outputs=[available_videos, selected_video_player, video_player]
-                    )
-                
-                # About Tab
-                with gr.Tab("ℹ️ About"):
-                    gr.Markdown("""
-                    ## About NASA Solar Image Downloader
-                    
-                    This comprehensive web application downloads and processes images from NASA's Solar Dynamics Observatory (SDO).
-                    
-                    ### 🌟 Features
-                    - **Download Management**: Bulk download solar images for any date range
-                    - **Image Viewer**: Browse images with full playback controls (First, Previous, Next, Last)
-                    - **Video Creation**: Create time-lapse MP4 videos with customizable FPS
-                    - **Multiple Filters**: 12 different wavelengths and composite filters
-                    - **High Resolution**: Support for 1024, 2048, and 4096 pixel images
-                    - **Custom Keywords**: Advanced search customization
-                    - **Progress Tracking**: Real-time progress for all operations
-                    
-                    ### 🔬 Solar Filters Explained
-                    
-                    **Individual Wavelengths:**
-                    - **193 Å**: Shows coronal loops and hot active regions
-                    - **304 Å**: Reveals the chromosphere and filament channels  
-                    - **171 Å**: Displays quiet corona and coronal holes
-                    - **211 Å**: Highlights active regions and hot plasma
-                    - **131 Å**: Shows flaring regions and very hot plasma
-                    - **335 Å**: Reveals active region cores
-                    - **94 Å**: Shows extremely hot plasma and flare ribbons
-                    - **1600 Å**: Displays transition region and upper photosphere
-                    - **1700 Å**: Shows temperature minimum and photosphere
-                    
-                    **Composite Filters:**
-                    - **094+335+193**: Multi-wavelength view of hot plasma structures
-                    - **304+211+171**: Comprehensive view from chromosphere to corona
-                    - **211+193+171**: Active regions with coronal context
-                    
-                    ### 🚀 Quick Start Guide
-                    1. **Download Images**: Select date range, choose filter, click download
-                    2. **View Images**: Load images and use playback controls to browse
-                    3. **Create Videos**: Set date range and FPS, create time-lapse videos
-                    4. **Customize**: Use Settings tab for advanced configuration
-                    
-                    ### 📊 Data Source
-                    All images are sourced from NASA's Solar Dynamics Observatory (SDO), which provides continuous observations of the Sun in multiple wavelengths.
-                    
-                    **🏆 Created by Andy Kong**
-                    
-                    ---
-                    *This application provides the same functionality as the desktop version but accessible from any web browser.*
-                    """)
-            
-            return app
+                            open_folder_btn.click(
+                                fn=self.open_data_folder,
+                                outputs=[utility_output]
+                            )
+                            
+                            cleanup_btn.click(
+                                fn=self.cleanup_corrupted_files,
+                                outputs=[utility_output]
+                            )
+        
+            # Initialize video dropdown with current video list when interface loads
+            app.load(
+                fn=lambda: gr.Dropdown(choices=self.get_video_list()),
+                outputs=[available_videos]
+            )
+        
+        return app
     
     def launch(self, share=False, server_port=7860):
         """Launch the Gradio interface."""
         app = self.create_interface()
-        app.launch(share=share, server_port=server_port, theme=gr.themes.Soft())
+        app.launch(share=share, server_port=server_port)
 
 
 def main():
@@ -2652,7 +2442,7 @@ def main():
         
         # Launch with share=True to create a public link
         # Set share=False for local-only access
-        gradio_app.launch(share=False, server_port=7862)  # Use port 7862 instead of 7861
+        gradio_app.launch(share=False, server_port=7860)
         
     except Exception as e:
         print(f"❌ Error starting application: {e}")

@@ -101,7 +101,11 @@ class NASADownloaderGUI:
             "1700": {"name": "1700 Å", "desc": "Temperature min", "color": "#fd79a8"},
             "094335193": {"name": "094+335+193", "desc": "Hot plasma + Active cores\n+ Coronal loops", "color": "#8e44ad"},
             "304211171": {"name": "304+211+171", "desc": "Chromosphere + Active regions\n+ Quiet corona", "color": "#e67e22"},
-            "211193171": {"name": "211+193+171", "desc": "Active regions + Coronal loops\n+ Quiet corona", "color": "#27ae60"}
+            "211193171": {"name": "211+193+171", "desc": "Active regions + Coronal loops\n+ Quiet corona", "color": "#27ae60"},
+            "HMIB": {"name": "HMI Magnetogram", "desc": "Magnetic field data", "color": "#2c3e50"},
+            "HMIBC": {"name": "HMI Continuum", "desc": "White-light surface", "color": "#34495e"},
+            "HMIIC": {"name": "HMI Intensitygram", "desc": "Surface intensity", "color": "#7f8c8d"},
+            "HMIIF": {"name": "HMI Dopplergram", "desc": "Velocity measurements", "color": "#95a5a6"}
         }
         self.filter_buttons = {}
         self._filter_initialized = False
@@ -3166,7 +3170,7 @@ Without it, the application will use OpenCV as a fallback."""
         # Confirm with user since this will download a lot of images
         result = messagebox.askyesno(
             "Download All Filters", 
-            "This will download images for all 12 solar filters for the selected date range.\n"
+            "This will download images for all solar filters for the selected date range.\n"
             "This may take a long time and download many images.\n\n"
             "Do you want to continue?"
         )
