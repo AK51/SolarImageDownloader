@@ -2,6 +2,8 @@
 
 A comprehensive Python application for downloading, viewing, and analyzing solar images from NASA's Solar Dynamics Observatory (SDO). Features multiple interfaces including web-based Gradio interfaces, video creation capabilities, and real-time solar wind data analysis.
 
+Video tutorial, https://youtu.be/sMNstj4-Rl8?si=xW7LcV4NqDrc1BuT
+
 ![NASA SDO Solar Images](background_solar.jpg)
 ![NASA SDO Solar Images](app.jpg)
 ![NASA SDO Solar Images](launch.jpg)
@@ -259,5 +261,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Documentation**: Check the source code comments for detailed API documentation
 
 ---
+
 
 **Created by Andy Kong** | **Powered by NASA SDO Data** | **Built with Python & Gradio**
