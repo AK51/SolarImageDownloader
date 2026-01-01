@@ -3027,6 +3027,50 @@ Without it, the application will use OpenCV as a fallback."""
         self.video_start_date_var.set(start_date.strftime("%Y-%m-%d"))
         self.video_end_date_var.set(end_date.strftime("%Y-%m-%d"))
     
+    def _parse_date_input(self, date_str):
+        """Parse date input with improved error handling and format flexibility."""
+        if not date_str or not date_str.strip():
+            raise ValueError("Date cannot be empty")
+        
+        date_str = date_str.strip()
+        
+        # Try standard format first
+        try:
+            parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+            # Validate year range for standard format too
+            if parsed_date.year < 2010 or parsed_date.year > 2030:
+                raise ValueError(f"Year {parsed_date.year} is outside supported range (2010-2030)")
+            return parsed_date
+        except ValueError as e:
+            if "outside supported range" in str(e):
+                raise e
+            # Continue to alternative parsing if strptime failed
+        
+        # Try to handle common variations
+        try:
+            # Handle formats like "2026-1-1" by padding with zeros
+            parts = date_str.split('-')
+            if len(parts) == 3:
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                
+                # Validate ranges
+                if year < 2010 or year > 2030:
+                    raise ValueError(f"Year {year} is outside supported range (2010-2030)")
+                if month < 1 or month > 12:
+                    raise ValueError(f"Month {month} is invalid (1-12)")
+                if day < 1 or day > 31:
+                    raise ValueError(f"Day {day} is invalid (1-31)")
+                
+                return datetime(year, month, day)
+            else:
+                raise ValueError(f"Invalid date format: {date_str}")
+        except (ValueError, IndexError) as e:
+            if "outside supported range" in str(e) or "is invalid" in str(e):
+                raise e
+            else:
+                raise ValueError(f"Cannot parse date '{date_str}'. Use format YYYY-MM-DD (e.g., 2026-01-01)")
+    
+    
     def start_download(self):
         """Start the download process in a background thread."""
         if self.download_thread and self.download_thread.is_alive():
@@ -3035,11 +3079,11 @@ Without it, the application will use OpenCV as a fallback."""
         
         # First, check how many images will be downloaded
         try:
-            # Parse dates
-            start_date = datetime.strptime(self.start_date_var.get(), "%Y-%m-%d")
-            end_date = datetime.strptime(self.end_date_var.get(), "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror("Invalid Date", "Please enter valid dates in YYYY-MM-DD format")
+            # Parse dates with improved error handling
+            start_date = self._parse_date_input(self.start_date_var.get())
+            end_date = self._parse_date_input(self.end_date_var.get())
+        except ValueError as e:
+            messagebox.showerror("Invalid Date", f"Please enter valid dates in YYYY-MM-DD format.\n\nError: {str(e)}\n\nExamples:\n• 2026-01-01\n• 2025-12-31")
             return
         
         # Show scanning message
@@ -3107,9 +3151,9 @@ Without it, the application will use OpenCV as a fallback."""
     def _download_worker(self):
         """Download worker running in background thread."""
         try:
-            # Parse dates
-            start_date = datetime.strptime(self.start_date_var.get(), "%Y-%m-%d")
-            end_date = datetime.strptime(self.end_date_var.get(), "%Y-%m-%d")
+            # Parse dates with improved error handling
+            start_date = self._parse_date_input(self.start_date_var.get())
+            end_date = self._parse_date_input(self.end_date_var.get())
             
             self.root.after(0, lambda: self.log_message(f"Starting download for {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"))
             self.root.after(0, lambda: self.status_label.config(text="Preparing download..."))
@@ -3188,9 +3232,9 @@ Without it, the application will use OpenCV as a fallback."""
     def _download_all_filters_worker(self):
         """Download worker for all filters running in background thread."""
         try:
-            # Parse dates
-            start_date = datetime.strptime(self.start_date_var.get(), "%Y-%m-%d")
-            end_date = datetime.strptime(self.end_date_var.get(), "%Y-%m-%d")
+            # Parse dates with improved error handling
+            start_date = self._parse_date_input(self.start_date_var.get())
+            end_date = self._parse_date_input(self.end_date_var.get())
             
             self.root.after(0, lambda: self.log_message(f"Starting download for ALL FILTERS from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"))
             
@@ -3512,11 +3556,11 @@ Without it, the application will use OpenCV as a fallback."""
     def create_date_range_video(self):
         """Create video for selected date range."""
         try:
-            # Parse dates
-            start_date = datetime.strptime(self.video_start_date_var.get(), "%Y-%m-%d")
-            end_date = datetime.strptime(self.video_end_date_var.get(), "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror("Invalid Date", "Please enter valid dates in YYYY-MM-DD format")
+            # Parse dates with improved error handling
+            start_date = self._parse_date_input(self.video_start_date_var.get())
+            end_date = self._parse_date_input(self.video_end_date_var.get())
+        except ValueError as e:
+            messagebox.showerror("Invalid Date", f"Please enter valid dates in YYYY-MM-DD format.\n\nError: {str(e)}\n\nExamples:\n• 2026-01-01\n• 2025-12-31")
             return
         
         if start_date > end_date:
@@ -4233,14 +4277,27 @@ Without it, the application will use OpenCV as a fallback."""
         """Open the data folder."""
         try:
             data_dir = self.storage.base_data_dir
+            
+            # Ensure the data directory exists
+            if not data_dir.exists():
+                data_dir.mkdir(parents=True, exist_ok=True)
+                messagebox.showinfo("Info", f"Created data directory: {data_dir}")
+            
+            # Convert to absolute path for better compatibility
+            abs_data_dir = data_dir.absolute()
+            
             if sys.platform.startswith('win'):
-                os.startfile(data_dir)
+                # Use os.startfile for Windows - it's more reliable
+                os.startfile(str(abs_data_dir))
             elif sys.platform.startswith('darwin'):
-                subprocess.run(['open', str(data_dir)])
+                subprocess.run(['open', str(abs_data_dir)], check=True)
             else:
-                subprocess.run(['xdg-open', str(data_dir)])
+                subprocess.run(['xdg-open', str(abs_data_dir)], check=True)
+                
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Could not open data folder: {str(e)}\nPath: {abs_data_dir}")
         except Exception as e:
-            messagebox.showerror("Error", f"Could not open data folder: {str(e)}")
+            messagebox.showerror("Error", f"Could not open data folder: {str(e)}\nPath: {abs_data_dir}")
     
     def cleanup_files(self):
         """Clean up corrupted files."""

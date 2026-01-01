@@ -98,6 +98,50 @@ class NASADownloaderGradio:
         self.plot_html_path = None
         self.plotly_available = HAS_PLOTLY
     
+    def _parse_date_input(self, date_str):
+        """Parse date input with improved error handling and format flexibility."""
+        if not date_str or not date_str.strip():
+            raise ValueError("Date cannot be empty")
+        
+        date_str = date_str.strip()
+        
+        # Try standard format first
+        try:
+            parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+            # Validate year range for standard format too
+            if parsed_date.year < 2010 or parsed_date.year > 2030:
+                raise ValueError(f"Year {parsed_date.year} is outside supported range (2010-2030)")
+            return parsed_date
+        except ValueError as e:
+            if "outside supported range" in str(e):
+                raise e
+            # Continue to alternative parsing if strptime failed
+        
+        # Try to handle common variations
+        try:
+            # Handle formats like "2026-1-1" by padding with zeros
+            parts = date_str.split('-')
+            if len(parts) == 3:
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                
+                # Validate ranges
+                if year < 2010 or year > 2030:
+                    raise ValueError(f"Year {year} is outside supported range (2010-2030)")
+                if month < 1 or month > 12:
+                    raise ValueError(f"Month {month} is invalid (1-12)")
+                if day < 1 or day > 31:
+                    raise ValueError(f"Day {day} is invalid (1-31)")
+                
+                return datetime(year, month, day)
+            else:
+                raise ValueError(f"Invalid date format: {date_str}")
+        except (ValueError, IndexError) as e:
+            if "outside supported range" in str(e) or "is invalid" in str(e):
+                raise e
+            else:
+                raise ValueError(f"Cannot parse date '{date_str}'. Use format YYYY-MM-DD (e.g., 2026-01-01)")
+    
+    
     def set_date_range(self, days_back):
         """Set date range for quick selection."""
         end_date = datetime.now()
@@ -117,9 +161,9 @@ class NASADownloaderGradio:
             self.scraper.update_filters(resolution, search_keyword)
             self.storage.update_file_pattern(resolution, search_keyword)
             
-            # Parse dates
-            start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d")
+            # Parse dates with improved error handling
+            start = self._parse_date_input(start_date)
+            end = self._parse_date_input(end_date)
             
             progress(0, desc="Scanning directories...")
             
@@ -256,8 +300,8 @@ class NASADownloaderGradio:
             # Update storage pattern to match selected filter and resolution
             self.storage.update_file_pattern(resolution, search_keyword)
             
-            start_date = datetime.strptime(from_date.split(' ')[0], "%Y-%m-%d")
-            end_date = datetime.strptime(to_date.split(' ')[0], "%Y-%m-%d")
+            start_date = self._parse_date_input(from_date.split(' ')[0])
+            end_date = self._parse_date_input(to_date.split(' ')[0])
             
             # Ensure from_date is not after to_date
             if start_date > end_date:
@@ -552,9 +596,9 @@ class NASADownloaderGradio:
             self.scraper.update_filters(resolution, search_keyword)
             self.storage.update_file_pattern(resolution, search_keyword)
             
-            # Parse dates
-            start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d")
+            # Parse dates with improved error handling
+            start = self._parse_date_input(start_date)
+            end = self._parse_date_input(end_date)
             
             progress(0.1, desc="Collecting images...")
             
